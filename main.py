@@ -3,81 +3,78 @@ from torch import nn
 from torch import optim
 from torch.utils.data import DataLoader
 from torch.autograd import Variable
-from torchvision.transforms import Compose, ToTensor
-
+from torchvision.utils import save_image
 from tensorboardX import SummaryWriter
 
-import cv2
-from glob import glob
+import os
 from math import log10
-import argparse
 
 from model import SRCNN
 from dataset import DatasetFromFolder, DatasetFromFolderEval
 
-parser = argparse.ArgumentParser(description='SRCNN Example')
+import argparse
+parser = argparse.ArgumentParser(description='predictionCNN Example')
 parser.add_argument('--cuda', action='store_true', default=False)
 opt = parser.parse_args()
 
-train_set = DatasetFromFolder(image_dir='./data/General-100/train', patch_size=96, scale_factor=4, data_augmentation=True, transform=Compose([ToTensor()]))
+train_set = DatasetFromFolder(image_dir='./data/General-100/train', patch_size=96, scale_factor=4, data_augmentation=True)
 train_loader = DataLoader(dataset=train_set, batch_size=10, shuffle=True)
 
-val_set = DatasetFromFolderEval(image_dir='./data/General-100/val', scale_factor=4, transform=Compose([ToTensor()]))
+val_set = DatasetFromFolderEval(image_dir='./data/General-100/val', scale_factor=4)
 val_loader = DataLoader(dataset=val_set, batch_size=1, shuffle=False)
 
-net = SRCNN()
+model = SRCNN()
 criterion = nn.MSELoss()
-
 if opt.cuda:
-    net = net.cuda()
+    model = model.cuda()
     criterion = criterion.cuda()
 
-optimizer = optim.Adam(net.parameters(), lr=1e-4)
-writer = SummaryWriter('logs/')
+optimizer = optim.Adam(model.parameters(), lr=1e-4)
+writer = SummaryWriter()
+os.mkdir(writer.log_dir + '/samples')
 
 for epoch in range(50000):
-    epoch_loss = 0
-    net.train()
+    model.train()
+    epoch_loss, epoch_psnr = 0, 0
     for batch in train_loader:
-        lr, hr = Variable(batch[0]), Variable(batch[1])
-        
+        inputs, targets = Variable(batch[0]), Variable(batch[1])
         if opt.cuda:
-            lr = lr.cuda()
-            hr = hr.cuda()
+            inputs = inputs.cuda()
+            targets = targets.cuda()
 
         optimizer.zero_grad()        
-        sr = net(lr)
-        loss = criterion(sr, hr)
-        epoch_loss += loss.data[0]
+        prediction = model(inputs)
+        loss = criterion(prediction, targets)
+        epoch_loss += loss.data
+        epoch_psnr += 10 * log10(1 / loss.data)
         
         loss.backward()
         optimizer.step()
 
     writer.add_scalar('train/loss', epoch_loss / len(train_loader), global_step=epoch)
-    writer.add_scalar('train/psnr', 10 * log10(1 / (epoch_loss / len(train_loader))), global_step=epoch)
-    print('[Epoch {}] Loss: {}'.format(epoch + 1, epoch_loss / len(train_loader)))
+    writer.add_scalar('train/psnr', epoch_psnr / len(train_loader), global_step=epoch)
+    print('[Epoch {}] Loss: {:.4f}, PSNR: {:.4f} dB'.format(epoch + 1, epoch_loss / len(train_loader), epoch_psnr / len(train_loader)))
 
-    net.eval()
-    avg_psnr = 0
-    for batch in val_loader:
-        lr, hr = Variable(batch[0]), Variable(batch[1])
-        
-        if opt.cuda:
-            lr = lr.cuda()
-            hr = hr.cuda()
-            
-        sr = net(lr)
-        mse = criterion(sr, hr)
-        psnr = 10 * log10(1 / mse.data[0])
-        avg_psnr += psnr
-    writer.add_scalar('val/psnr', avg_psnr / len(val_loader), global_step=epoch)
-    print("===> Avg. PSNR: {:.4f} dB".format(avg_psnr / len(val_loader)))
+    if (epoch + 1) % 10 != 0:
+        continue
 
-    img_in = batch[0][:1].permute(0, 2, 3, 1).squeeze(0).numpy() * 255
-    img_tar = batch[1][:1].permute(0, 2, 3, 1).squeeze(0).numpy() * 255
-    img_sr = sr[:1].data.permute(0, 2, 3, 1).squeeze(0).cpu().numpy() * 255
+    model.eval()
+    val_loss, val_psnr = 0, 0
+    with torch.no_grad():
+        for batch in val_loader:
+            inputs, targets = batch[0], batch[1]
+            if opt.cuda:
+                inputs = inputs.cuda()
+                targets = targets.cuda()
+                
+            prediction = model(inputs)
+            loss = criterion(prediction, targets)
+            val_loss += loss.data
+            val_psnr += 10 * log10(1 / loss.data)
 
-    cv2.imwrite('input.bmp', img_in[:, :, ::-1])
-    cv2.imwrite('target.bmp', img_tar[:, :, ::-1])
-    cv2.imwrite('sr.bmp', img_sr[:, :, ::-1])
+            save_image(prediction, '{}/samples/{}_epoch{}.png'.format(writer.log_dir, batch[2][0], epoch + 1), nrow=1)
+
+    writer.add_scalar('val/loss', val_loss / len(val_loader), global_step=epoch)
+    writer.add_scalar('val/psnr', val_psnr / len(val_loader), global_step=epoch)
+    print("===> Avg. Loss: {:.4f}, PSNR: {:.4f} dB".format(val_loss / len(val_loader), val_psnr / len(val_loader)))
 

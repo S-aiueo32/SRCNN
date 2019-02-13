@@ -1,96 +1,68 @@
-import torch.utils.data as data
 import torch
-import numpy as np
-import os
-from os import listdir
-from os.path import join
+import torch.utils.data as data
+from torchvision import transforms
+from torchvision.transforms import ToTensor, RandomCrop
+
 from PIL import Image, ImageOps
 import random
-from random import randrange
+from pathlib import Path
 
-def is_image_file(filename):
-    return any(filename.endswith(extension) for extension in [".png", ".jpg", ".jpeg", ".bmp"])
 
-def load_img(filepath):
-    img = Image.open(filepath).convert('RGB')
-    return img
-
-def rescale_img(img_in, scale):
-    size_in = img_in.size
-    new_size_in = tuple([int(x * scale) for x in size_in])
-    img_in = img_in.resize(new_size_in, resample=Image.BICUBIC)
-    return img_in
-
-def get_patch(img, patch_size, scale, ix=-1, iy=-1):
-    (ih, iw) = img.size
-    if ix == -1:
-        ix = random.randrange(0, iw - patch_size + 1)
-    if iy == -1:
-        iy = random.randrange(0, ih - patch_size + 1)
-
-    img_tar = img.crop((iy, ix, iy + patch_size, ix + patch_size))
-    img_in = img_tar.resize((int(img_tar.size[0] / scale),int(img_tar.size[1]/scale)), Image.BICUBIC)
-    img_in = img_in.resize((img_in.size[0] * scale, img_in.size[1] * scale), Image.BICUBIC)
-
-    return img_in, img_tar
-
-def augment(img_in, img_tar, flip_h=True, rot=True):
-    if random.random() < 0.5 and flip_h:
-        img_in = ImageOps.flip(img_in)
-        img_tar = ImageOps.flip(img_tar)
-        
-    if rot:
-        if random.random() < 0.5:
-            img_in = ImageOps.mirror(img_in)
-            img_tar = ImageOps.mirror(img_tar)
-        if random.random() < 0.5:
-            img_in = img_in.rotate(180)
-            img_tar = img_tar.rotate(180)
-            
-    return img_in, img_tar
-    
 class DatasetFromFolder(data.Dataset):
-    def __init__(self, image_dir, patch_size, scale_factor, data_augmentation, transform=None):
+    def __init__(self, image_dir, patch_size, scale_factor, data_augmentation=True):
         super(DatasetFromFolder, self).__init__()
-        self.filenames = [join(image_dir, x) for x in listdir(image_dir) if is_image_file(x)]
+        self.filenames = [str(filename) for filename in Path(image_dir).glob('*') if filename.suffix in ['.bmp', '.jpg', '.png']]
         self.patch_size = patch_size
         self.scale_factor = scale_factor
-        self.transform = transform
         self.data_augmentation = data_augmentation
+        self.crop = RandomCrop(self.patch_size)
 
     def __getitem__(self, index):
-        target = load_img(self.filenames[index])
-        input, target= get_patch(target, self.patch_size, self.scale_factor)
+        target_img = Image.open(self.filenames[index]).convert('RGB')
+        target_img = self.crop(target_img)
         
         if self.data_augmentation:
-            input, target = augment(input, target)
-        
-        if self.transform:
-            input = self.transform(input)
-            target = self.transform(target)
-                
-        return input, target
+            if random.random() < 0.5:
+                target_img = ImageOps.flip(target_img)
+            if random.random() < 0.5:
+                target_img = ImageOps.mirror(target_img)
+            if random.random() < 0.5:
+                target_img = target_img.rotate(180)
+
+        input_img = target_img.resize((self.patch_size // self.scale_factor,) * 2, Image.BICUBIC)
+        input_img = input_img.resize((self.patch_size,) * 2, Image.BICUBIC)
+
+        return ToTensor()(input_img), ToTensor()(target_img)
 
     def __len__(self):
         return len(self.filenames)
 
 class DatasetFromFolderEval(data.Dataset):
-    def __init__(self, image_dir, scale_factor, transform=None):
+    def __init__(self, image_dir, scale_factor):
         super(DatasetFromFolderEval, self).__init__()
-        self.filenames = [join(image_dir, x) for x in listdir(image_dir) if is_image_file(x)]
+        self.filenames = [str(filename) for filename in Path(image_dir).glob('*') if filename.suffix in ['.bmp', '.jpg', '.png']]
         self.scale_factor = scale_factor
-        self.transform = transform
 
     def __getitem__(self, index):
-        target = load_img(self.filenames[index])
-        input = target.resize((int(target.size[0] / self.scale_factor),int(target.size[1]/self.scale_factor)), Image.BICUBIC)
-        input = input.resize((target.size[0], target.size[1]), Image.BICUBIC)
+        target_img = Image.open(self.filenames[index]).convert('RGB')
         
-        if self.transform:
-            target = self.transform(target)
-            input = self.transform(input)
-            
-        return input, target
-      
+        input_img = target_img.resize((target_img.size[0] // self.scale_factor, target_img.size[1] // self.scale_factor), Image.BICUBIC)
+        input_img = input_img.resize(target_img.size, Image.BICUBIC)
+
+        return ToTensor()(input_img), ToTensor()(target_img), Path(self.filenames[index]).stem
+
     def __len__(self):
         return len(self.filenames)
+
+if __name__ == "__main__":
+    from torch.utils.data import DataLoader
+    from torchvision.utils import save_image
+
+    dataset = DatasetFromFolderEval_('./data/General-100/train', 96, 2)
+    data_loader = DataLoader(dataset)
+
+    for batch in data_loader:
+        pass
+
+    save_image(batch[0], 'lr.png', nrow=1)
+    save_image(batch[1], 'hr.png', nrow=1)
