@@ -4,9 +4,8 @@ from torchvision import transforms
 from torchvision.transforms import ToTensor, RandomCrop
 
 from PIL import Image, ImageOps
-import random
 from pathlib import Path
-
+import random
 
 class DatasetFromFolder(data.Dataset):
     def __init__(self, image_dir, patch_size, scale_factor, data_augmentation=True):
@@ -53,16 +52,3 @@ class DatasetFromFolderEval(data.Dataset):
 
     def __len__(self):
         return len(self.filenames)
-
-if __name__ == "__main__":
-    from torch.utils.data import DataLoader
-    from torchvision.utils import save_image
-
-    dataset = DatasetFromFolderEval_('./data/General-100/train', 96, 2)
-    data_loader = DataLoader(dataset)
-
-    for batch in data_loader:
-        pass
-
-    save_image(batch[0], 'lr.png', nrow=1)
-    save_image(batch[1], 'hr.png', nrow=1)

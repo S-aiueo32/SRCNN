@@ -6,7 +6,7 @@ from torch.autograd import Variable
 from torchvision.utils import save_image
 from tensorboardX import SummaryWriter
 
-import os
+from pathlib import Path
 from math import log10
 
 from model import SRCNN
@@ -29,9 +29,17 @@ if opt.cuda:
     model = model.cuda()
     criterion = criterion.cuda()
 
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
+optimizer = optim.Adam([{'params': model.conv1.parameters(), 'lr':1e-4},
+                       {'params': model.conv2.parameters(), 'lr':1e-4},
+                       {'params': model.conv3.parameters(), 'lr': 1e-5}],
+                       lr=1e-4)
+
 writer = SummaryWriter()
-os.mkdir(writer.log_dir + '/samples')
+log_dir = Path(writer.log_dir)
+sample_dir = log_dir / 'sample'
+sample_dir.mkdir(exist_ok=True)
+weight_dir = log_dir / 'weights'
+weight_dir.mkdir(exist_ok=True)
 
 for epoch in range(50000):
     model.train()
@@ -55,7 +63,7 @@ for epoch in range(50000):
     writer.add_scalar('train/psnr', epoch_psnr / len(train_loader), global_step=epoch)
     print('[Epoch {}] Loss: {:.4f}, PSNR: {:.4f} dB'.format(epoch + 1, epoch_loss / len(train_loader), epoch_psnr / len(train_loader)))
 
-    if (epoch + 1) % 10 != 0:
+    if (epoch + 1) % 1000 != 0:
         continue
 
     model.eval()
@@ -72,9 +80,11 @@ for epoch in range(50000):
             val_loss += loss.data
             val_psnr += 10 * log10(1 / loss.data)
 
-            save_image(prediction, '{}/samples/{}_epoch{}.png'.format(writer.log_dir, batch[2][0], epoch + 1), nrow=1)
+            save_image(prediction, sample_dir / '{}_epoch{:05}.png'.format(batch[2][0], epoch + 1), nrow=1)
 
     writer.add_scalar('val/loss', val_loss / len(val_loader), global_step=epoch)
     writer.add_scalar('val/psnr', val_psnr / len(val_loader), global_step=epoch)
     print("===> Avg. Loss: {:.4f}, PSNR: {:.4f} dB".format(val_loss / len(val_loader), val_psnr / len(val_loader)))
+
+    torch.save(model.state_dict(), str(weight_dir / 'weight_epoch{:05}.pth'.format(epoch + 1)))
 
