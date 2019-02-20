@@ -29,10 +29,10 @@ if opt.cuda:
     model = model.cuda()
     criterion = criterion.cuda()
 
-optimizer = optim.Adam([{'params': model.conv1.parameters(), 'lr':1e-4},
-                       {'params': model.conv2.parameters(), 'lr':1e-4},
-                       {'params': model.conv3.parameters(), 'lr': 1e-5}],
-                       lr=1e-4)
+optimizer = optim.Adam([{'params': model.conv1.parameters()},
+                        {'params': model.conv2.parameters()},
+                        {'params': model.conv3.parameters(), 'lr': 1e-5}],
+                        lr=1e-4)
 
 writer = SummaryWriter()
 log_dir = Path(writer.log_dir)
