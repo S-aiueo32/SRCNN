@@ -53,5 +53,5 @@ with torch.no_grad():
         save_image(inputs, Path(opt.save_dir) / '{}_lr.png'.format(batch[2][0]), nrow=1)
         save_image(targets, Path(opt.save_dir) / '{}_hr.png'.format(batch[2][0]), nrow=1)
 
-print("===> Avg. Loss: {:.4f}, PSNR: {:.4f} dB".format(total_loss / len(test_loader), total_psnr / len(test_loader)))
-print("===> Avg. Loss: {:.4f}, PSNR: {:.4f} dB".format(total_loss_b / len(test_loader), total_psnr_b / len(test_loader)))
+print("===> [Bicubic] Avg. Loss: {:.4f}, PSNR: {:.4f} dB".format(total_loss_b / len(test_loader), total_psnr_b / len(test_loader)))
+print("===> [SRCNN] Avg. Loss: {:.4f}, PSNR: {:.4f} dB".format(total_loss / len(test_loader), total_psnr / len(test_loader)))
